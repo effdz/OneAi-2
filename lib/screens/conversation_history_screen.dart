@@ -24,8 +24,11 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
   @override
   void initState() {
     super.initState();
+    print('🏠 ConversationHistoryScreen: initState');
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<ChatProvider>(context, listen: false).loadConversations();
+      print('🏠 ConversationHistoryScreen: Loading conversations after frame');
+      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+      chatProvider.loadConversations();
     });
   }
 
@@ -65,11 +68,24 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
       body: SafeArea(
         child: Consumer<ChatProvider>(
           builder: (context, chatProvider, child) {
+            print('🏠 ConversationHistoryScreen: Building with ${chatProvider.conversations.length} conversations');
+            print('🏠 ConversationHistoryScreen: Loading state: ${chatProvider.isLoadingConversations}');
+
             if (chatProvider.isLoadingConversations) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Loading conversations...'),
+                  ],
+                ),
+              );
             }
 
             final conversations = chatProvider.conversations;
+            print('🏠 ConversationHistoryScreen: Total conversations: ${conversations.length}');
 
             if (conversations.isEmpty) {
               return _buildEmptyState();
@@ -81,17 +97,26 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
                 : conversations.where((conv) =>
                 conv.title.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
+            print('🏠 ConversationHistoryScreen: Filtered conversations: ${filteredConversations.length}');
+
             if (filteredConversations.isEmpty) {
               return _buildNoResultsFound();
             }
 
-            return ListView.builder(
-              padding: padding,
-              itemCount: filteredConversations.length,
-              itemBuilder: (context, index) {
-                final conversation = filteredConversations[index];
-                return _buildConversationItem(conversation);
+            return RefreshIndicator(
+              onRefresh: () async {
+                print('🔄 ConversationHistoryScreen: Pull to refresh');
+                await chatProvider.forceRefreshConversations();
               },
+              child: ListView.builder(
+                padding: padding,
+                itemCount: filteredConversations.length,
+                itemBuilder: (context, index) {
+                  final conversation = filteredConversations[index];
+                  print('🏠 ConversationHistoryScreen: Building item $index: ${conversation.title}');
+                  return _buildConversationItem(conversation);
+                },
+              ),
             );
           },
         ),
@@ -127,6 +152,15 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
           icon: Icon(isApple ? CupertinoIcons.back : Icons.arrow_back),
           onPressed: _stopSearch,
         ),
+        actions: [
+          IconButton(
+            icon: Icon(isApple ? CupertinoIcons.refresh : Icons.refresh),
+            onPressed: () {
+              print('🔄 Manual refresh from app bar');
+              Provider.of<ChatProvider>(context, listen: false).forceRefreshConversations();
+            },
+          ),
+        ],
       );
     } else {
       return AppBar(
@@ -136,6 +170,14 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
             icon: Icon(isApple ? CupertinoIcons.search : Icons.search),
             onPressed: _startSearch,
             tooltip: 'Search',
+          ),
+          IconButton(
+            icon: Icon(isApple ? CupertinoIcons.refresh : Icons.refresh),
+            onPressed: () {
+              print('🔄 Manual refresh from app bar');
+              Provider.of<ChatProvider>(context, listen: false).forceRefreshConversations();
+            },
+            tooltip: 'Refresh',
           ),
         ],
       );
@@ -181,6 +223,14 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
+          ),
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: () {
+              print('🔄 Manual refresh from empty state');
+              Provider.of<ChatProvider>(context, listen: false).forceRefreshConversations();
+            },
+            child: const Text('Refresh'),
           ),
         ],
       ),
@@ -288,6 +338,7 @@ class _ConversationHistoryScreenState extends State<ConversationHistoryScreen> {
           },
         ),
         onTap: () {
+          print('🏠 ConversationHistoryScreen: Opening conversation ${conversation.id}');
           _openConversation(conversation);
         },
       ),

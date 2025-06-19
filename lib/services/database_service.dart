@@ -184,7 +184,7 @@ class DatabaseService {
   Future<String> createConversation(String userId, String chatbotId, String? title) async {
     try {
       await database;
-      print('Creating conversation for user: $userId, chatbot: $chatbotId');
+      print('📝 Creating conversation for user: $userId, chatbot: $chatbotId');
 
       final conversationId = 'conv_${DateTime.now().millisecondsSinceEpoch}';
       final conversations = _prefs.getStringList('conversations') ?? [];
@@ -202,10 +202,11 @@ class DatabaseService {
       conversations.add(jsonEncode(conversationData));
       await _prefs.setStringList('conversations', conversations);
 
-      print('Conversation created: $conversationId');
+      print('✅ Conversation created: $conversationId');
+      print('📊 Total conversations in storage: ${conversations.length}');
       return conversationId;
     } catch (e) {
-      print('Error creating conversation: $e');
+      print('❌ Error creating conversation: $e');
       rethrow;
     }
   }
@@ -213,37 +214,59 @@ class DatabaseService {
   Future<List<ConversationModel>> getUserConversations(String userId) async {
     try {
       await database;
-      print('Getting conversations for user: $userId');
+      print('🔍 Getting conversations for user: $userId');
 
       final conversations = _prefs.getStringList('conversations') ?? [];
+      print('📊 Total conversations in storage: ${conversations.length}');
+
       final userConversations = <ConversationModel>[];
 
       for (final convJson in conversations) {
-        final convData = jsonDecode(convJson);
-        if (convData['user_id'] == userId && !(convData['is_archived'] ?? false)) {
-          // Get message count for this conversation
-          final messageCount = await _getMessageCount(convData['id']);
+        try {
+          final convData = jsonDecode(convJson);
+          print('🔍 Checking conversation: ${convData['id']} for user: ${convData['user_id']}');
 
-          userConversations.add(ConversationModel(
-            id: convData['id'],
-            userId: convData['user_id'],
-            chatbotId: convData['chatbot_id'],
-            title: convData['title'],
-            createdAt: DateTime.parse(convData['created_at']),
-            updatedAt: DateTime.parse(convData['updated_at']),
-            isArchived: convData['is_archived'] ?? false,
-            messageCount: messageCount,
-          ));
+          // Debug: Print the comparison
+          print('   - Stored user_id: "${convData['user_id']}"');
+          print('   - Looking for user_id: "$userId"');
+          print('   - Match: ${convData['user_id'] == userId}');
+          print('   - Is archived: ${convData['is_archived']}');
+
+          if (convData['user_id'] == userId && !(convData['is_archived'] ?? false)) {
+            // Get message count for this conversation
+            final messageCount = await _getMessageCount(convData['id']);
+            print('   ✅ Adding conversation: ${convData['title']} with $messageCount messages');
+
+            userConversations.add(ConversationModel(
+              id: convData['id'],
+              userId: convData['user_id'],
+              chatbotId: convData['chatbot_id'],
+              title: convData['title'],
+              createdAt: DateTime.parse(convData['created_at']),
+              updatedAt: DateTime.parse(convData['updated_at']),
+              isArchived: convData['is_archived'] ?? false,
+              messageCount: messageCount,
+            ));
+          } else {
+            print('   ❌ Skipping conversation (user mismatch or archived)');
+          }
+        } catch (e) {
+          print('❌ Error parsing conversation JSON: $e');
+          print('   Raw JSON: $convJson');
         }
       }
 
       // Sort by updated_at descending
       userConversations.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
-      print('Returning ${userConversations.length} conversations');
+      print('✅ Returning ${userConversations.length} conversations for user $userId');
+      for (var conv in userConversations) {
+        print('   - ${conv.title} (${conv.messageCount} messages) - ${conv.updatedAt}');
+      }
+
       return userConversations;
     } catch (e) {
-      print('Error getting conversations: $e');
+      print('❌ Error getting conversations: $e');
       return [];
     }
   }
@@ -254,14 +277,19 @@ class DatabaseService {
       int count = 0;
 
       for (final msgJson in messages) {
-        final msgData = jsonDecode(msgJson);
-        if (msgData['conversation_id'] == conversationId) {
-          count++;
+        try {
+          final msgData = jsonDecode(msgJson);
+          if (msgData['conversation_id'] == conversationId) {
+            count++;
+          }
+        } catch (e) {
+          print('❌ Error parsing message JSON: $e');
         }
       }
 
       return count;
     } catch (e) {
+      print('❌ Error getting message count: $e');
       return 0;
     }
   }
@@ -326,7 +354,7 @@ class DatabaseService {
   Future<void> insertMessage(String conversationId, MessageModel message) async {
     try {
       await database;
-      print('Inserting message into conversation: $conversationId');
+      print('💬 Inserting message into conversation: $conversationId');
 
       final messages = _prefs.getStringList('messages') ?? [];
 
@@ -345,9 +373,10 @@ class DatabaseService {
       // Update conversation updated_at
       await _updateConversationTimestamp(conversationId);
 
-      print('Message inserted successfully');
+      print('✅ Message inserted successfully');
+      print('📊 Total messages in storage: ${messages.length}');
     } catch (e) {
-      print('Error inserting message: $e');
+      print('❌ Error inserting message: $e');
     }
   }
 

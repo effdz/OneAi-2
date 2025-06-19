@@ -28,18 +28,24 @@ class ChatProvider extends ChangeNotifier {
 
   // Initialize chat provider
   Future<void> initialize() async {
+    print('🔄 Initializing ChatProvider...');
     await loadConversations();
   }
 
   // Load user conversations based on current storage type
   Future<void> loadConversations() async {
+    print('🔄 Loading conversations...');
     _isLoadingConversations = true;
     notifyListeners();
 
     try {
       final userId = await AuthService.getUserId();
+      print('👤 Current user ID: $userId');
+
       if (userId != null) {
         // Check current storage type and load accordingly
+        print('💾 Current storage type: ${_storageManager.currentStorage}');
+
         if (_storageManager.currentStorage == StorageType.pocketbase) {
           await _loadConversationsFromPocketBase(userId);
         } else if (_storageManager.currentStorage == StorageType.hybrid) {
@@ -47,9 +53,18 @@ class ChatProvider extends ChangeNotifier {
         } else {
           await _loadConversationsFromLocal(userId);
         }
+
+        print('✅ Loaded ${_conversations.length} conversations total');
+        for (var conv in _conversations) {
+          print('  - ${conv.title} (${conv.messageCount} messages) - ${conv.updatedAt}');
+        }
+      } else {
+        print('❌ No user ID found');
+        _conversations = [];
       }
     } catch (e) {
-      print('Error loading conversations: $e');
+      print('❌ Error loading conversations: $e');
+      _conversations = [];
     } finally {
       _isLoadingConversations = false;
       notifyListeners();
@@ -57,15 +72,31 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> _loadConversationsFromLocal(String userId) async {
-    _conversations = await _dbService.getUserConversations(userId);
-    print('📱 Loaded ${_conversations.length} conversations from local storage');
+    try {
+      print('📱 Loading conversations from local storage for user: $userId');
+      _conversations = await _dbService.getUserConversations(userId);
+      print('📱 Loaded ${_conversations.length} conversations from local storage');
+
+      // Debug: Print each conversation
+      for (var conv in _conversations) {
+        print('  📱 Local Conv: ${conv.id} - ${conv.title} - ${conv.messageCount} msgs');
+      }
+    } catch (e) {
+      print('❌ Error loading from local storage: $e');
+      _conversations = [];
+    }
   }
 
   Future<void> _loadConversationsFromPocketBase(String userId) async {
     try {
-      // PocketBaseService.getUserConversations returns List<ConversationModel>
+      print('☁️ Loading conversations from PocketBase for user: $userId');
       _conversations = await _pbService.getUserConversations(userId);
       print('☁️ Loaded ${_conversations.length} conversations from PocketBase');
+
+      // Debug: Print each conversation
+      for (var conv in _conversations) {
+        print('  ☁️ PB Conv: ${conv.id} - ${conv.title} - ${conv.messageCount} msgs');
+      }
     } catch (e) {
       print('❌ Error loading from PocketBase, falling back to local: $e');
       await _loadConversationsFromLocal(userId);
@@ -77,6 +108,7 @@ class ChatProvider extends ChangeNotifier {
       // Try PocketBase first, fallback to local
       await _loadConversationsFromPocketBase(userId);
     } catch (e) {
+      print('❌ Hybrid mode: PocketBase failed, using local: $e');
       await _loadConversationsFromLocal(userId);
     }
   }
@@ -84,6 +116,7 @@ class ChatProvider extends ChangeNotifier {
   // Start new chat
   Future<void> startNewChat(String chatbotId) async {
     try {
+      print('🆕 Starting new chat with chatbot: $chatbotId');
       final userId = await AuthService.getUserId();
       if (userId == null) throw Exception('User not logged in');
 
@@ -97,19 +130,21 @@ class ChatProvider extends ChangeNotifier {
       } else {
         _currentConversationId = await _dbService.createConversation(
             userId, chatbotId, 'New Conversation');
+        print('📱 Created conversation in local storage: $_currentConversationId');
       }
 
       _currentMessages = [];
       await loadConversations(); // Refresh conversations list
       notifyListeners();
     } catch (e) {
-      print('Error starting new chat: $e');
+      print('❌ Error starting new chat: $e');
     }
   }
 
   // Load existing conversation
   Future<void> loadConversation(String conversationId) async {
     try {
+      print('📖 Loading conversation: $conversationId');
       _currentConversationId = conversationId;
 
       // Load messages based on storage type
@@ -117,6 +152,7 @@ class ChatProvider extends ChangeNotifier {
         await _loadMessagesFromPocketBase(conversationId);
       } else {
         _currentMessages = await _dbService.getConversationMessages(conversationId);
+        print('📱 Loaded ${_currentMessages.length} messages from local storage');
       }
 
       // Get chatbot ID from conversation
@@ -134,16 +170,17 @@ class ChatProvider extends ChangeNotifier {
         ),
       );
       _currentChatbotId = conversation.chatbotId;
+      print('🤖 Set current chatbot: $_currentChatbotId');
 
       notifyListeners();
     } catch (e) {
-      print('Error loading conversation: $e');
+      print('❌ Error loading conversation: $e');
     }
   }
 
   Future<void> _loadMessagesFromPocketBase(String conversationId) async {
     try {
-      // PocketBaseService.getConversationMessages returns List<MessageModel>
+      print('☁️ Loading messages from PocketBase for conversation: $conversationId');
       _currentMessages = await _pbService.getConversationMessages(conversationId);
       print('☁️ Loaded ${_currentMessages.length} messages from PocketBase');
     } catch (e) {
@@ -157,11 +194,13 @@ class ChatProvider extends ChangeNotifier {
     if (text.isEmpty) return;
 
     try {
+      print('💬 Sending message: ${text.substring(0, text.length > 50 ? 50 : text.length)}...');
       final userId = await AuthService.getUserId();
       if (userId == null) throw Exception('User not logged in');
 
       // If no current conversation, create one
       if (_currentConversationId == null) {
+        print('🆕 No current conversation, creating new one...');
         await startNewChat(_currentChatbotId);
       }
 
@@ -212,7 +251,11 @@ class ChatProvider extends ChangeNotifier {
       // Record usage analytics
       await _recordUsage(userId, 2, text.split(' ').length + response.split(' ').length);
 
+      // Refresh conversations to update message count
+      await loadConversations();
+
     } catch (e) {
+      print('❌ Error sending message: $e');
       // Handle error
       final errorMessage = MessageModel(
         id: const Uuid().v4(),
@@ -290,6 +333,7 @@ class ChatProvider extends ChangeNotifier {
   // Delete conversation
   Future<void> deleteConversation(String conversationId) async {
     try {
+      print('🗑️ Deleting conversation: $conversationId');
       if (_storageManager.currentStorage == StorageType.pocketbase) {
         await _pbService.pb.collection('conversations').delete(conversationId);
         print('☁️ Conversation deleted from PocketBase');
@@ -307,13 +351,14 @@ class ChatProvider extends ChangeNotifier {
       await loadConversations();
       notifyListeners();
     } catch (e) {
-      print('Error deleting conversation: $e');
+      print('❌ Error deleting conversation: $e');
     }
   }
 
   // Archive conversation
   Future<void> archiveConversation(String conversationId) async {
     try {
+      print('📦 Archiving conversation: $conversationId');
       if (_storageManager.currentStorage == StorageType.pocketbase) {
         await _pbService.pb.collection('conversations').update(conversationId, {
           'is_archived': true,
@@ -327,13 +372,14 @@ class ChatProvider extends ChangeNotifier {
       await loadConversations();
       notifyListeners();
     } catch (e) {
-      print('Error archiving conversation: $e');
+      print('❌ Error archiving conversation: $e');
     }
   }
 
   // Update conversation title
   Future<void> updateConversationTitle(String conversationId, String title) async {
     try {
+      print('✏️ Updating conversation title: $conversationId -> $title');
       if (_storageManager.currentStorage == StorageType.pocketbase) {
         await _pbService.pb.collection('conversations').update(conversationId, {
           'title': title,
@@ -347,12 +393,13 @@ class ChatProvider extends ChangeNotifier {
       await loadConversations(); // Refresh conversations list
       notifyListeners();
     } catch (e) {
-      print('Error updating conversation title: $e');
+      print('❌ Error updating conversation title: $e');
     }
   }
 
   // Clear current chat
   void clearCurrentChat() {
+    print('🧹 Clearing current chat');
     _currentMessages = [];
     _currentConversationId = null;
     _currentChatbotId = '';
@@ -360,14 +407,22 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void initChat(String chatbotId) {
+    print('🚀 Initializing chat with chatbot: $chatbotId');
     _currentChatbotId = chatbotId;
     _currentMessages = [];
     notifyListeners();
   }
 
   void clearChat(String chatbotId) {
+    print('🧹 Clearing chat for chatbot: $chatbotId');
     _currentMessages = [];
     notifyListeners();
+  }
+
+  // Force refresh conversations (for debugging)
+  Future<void> forceRefreshConversations() async {
+    print('🔄 Force refreshing conversations...');
+    await loadConversations();
   }
 
   // Search messages
@@ -383,7 +438,7 @@ class ChatProvider extends ChangeNotifier {
         return await _dbService.searchMessages(userId, query);
       }
     } catch (e) {
-      print('Error searching messages: $e');
+      print('❌ Error searching messages: $e');
       return [];
     }
   }
@@ -401,7 +456,7 @@ class ChatProvider extends ChangeNotifier {
         return await _dbService.getUserStats(userId);
       }
     } catch (e) {
-      print('Error getting user stats: $e');
+      print('❌ Error getting user stats: $e');
       return {};
     }
   }
@@ -419,7 +474,7 @@ class ChatProvider extends ChangeNotifier {
         return await _dbService.exportUserData(userId);
       }
     } catch (e) {
-      print('Error exporting user data: $e');
+      print('❌ Error exporting user data: $e');
       return {};
     }
   }
@@ -434,7 +489,7 @@ class ChatProvider extends ChangeNotifier {
       }
       await loadConversations();
     } catch (e) {
-      print('Error cleaning up old data: $e');
+      print('❌ Error cleaning up old data: $e');
     }
   }
 }

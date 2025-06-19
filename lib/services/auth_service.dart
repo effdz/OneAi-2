@@ -80,7 +80,16 @@ class AuthService {
 
   static Future<UserModel?> _getUserFromPocketBase(String userId) async {
     try {
-      return await _pbService.getUserById(userId);
+      final record = await _pbService.pb.collection('users').getOne(userId);
+      return UserModel(
+        id: record.id,
+        username: record.data?['username']?.toString() ?? '',
+        email: record.data?['email']?.toString() ?? '',
+        lastLogin: record.data?['last_login'] != null
+            ? DateTime.parse(record.data!['last_login'])
+            : null,
+        avatarUrl: record.data?['avatar_url']?.toString(),
+      );
     } catch (e) {
       print('Error getting user from PocketBase: $e');
       return null;
@@ -139,7 +148,14 @@ class AuthService {
       // Try PocketBase first if available
       if (_storageManager.currentStorage == StorageType.pocketbase) {
         try {
-          final user = await _pbService.login(email, password);
+          final record = await _pbService.login(email, password);
+          final user = UserModel(
+            id: record.id,
+            username: record.username,
+            email: record.email,
+            lastLogin: DateTime.now(),
+            avatarUrl: record.avatarUrl,
+          );
 
           await saveUserId(user.id);
           final token = _pbService.pb.authStore.token;
@@ -202,7 +218,14 @@ class AuthService {
       // Try PocketBase first if available
       if (_storageManager.currentStorage == StorageType.pocketbase) {
         try {
-          final user = await _pbService.register(username, email, password);
+          final record = await _pbService.register(username, email, password);
+          final user = UserModel(
+            id: record.id,
+            username: record.username,
+            email: record.email,
+            lastLogin: DateTime.now(),
+            avatarUrl: record.avatarUrl,
+          );
 
           await saveUserId(user.id);
           final token = _pbService.pb.authStore.token;

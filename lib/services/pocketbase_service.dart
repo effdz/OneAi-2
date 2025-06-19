@@ -39,6 +39,8 @@ class PocketBaseService {
       _initialized = true;
 
       print('✅ PocketBase initialized with URL: $_baseUrl');
+      print('🔐 Auth valid: ${_pb.authStore.isValid}');
+      print('👤 Current user: ${_pb.authStore.model?.id}');
     } catch (e) {
       print('❌ Error initializing PocketBase: $e');
       _initialized = false;
@@ -114,15 +116,17 @@ class PocketBaseService {
         await initialize();
       }
 
-      final user = await _pb.authWithPassword('users', email, password);
-      print('✅ PocketBase login successful: ${user.data['username']}');
+      final authRecord = await _pb.authWithPassword('users', email, password);
+      print('✅ PocketBase login successful: ${authRecord.data['username']}');
+      print('🔐 Auth token: ${_pb.authStore.token}');
+      print('👤 User ID: ${authRecord.id}');
 
       return UserModel(
-        id: user.id,
-        username: user.data['username'] ?? '',
-        email: user.data['email'] ?? '',
+        id: authRecord.id,
+        username: authRecord.data['username'] ?? '',
+        email: authRecord.data['email'] ?? '',
         lastLogin: DateTime.now(),
-        avatarUrl: user.data['avatar_url'],
+        avatarUrl: authRecord.data['avatar_url'],
       );
     } catch (e) {
       print('❌ PocketBase login failed: $e');
@@ -146,8 +150,8 @@ class PocketBaseService {
         'is_active': true,
       };
 
-      final user = await _pb.collection('users').create(userData);
-      print('✅ PocketBase registration successful: ${user.data['username']}');
+      final record = await _pb.collection('users').create(userData);
+      print('✅ PocketBase registration successful: ${record.data['username']}');
 
       // Auto login after registration
       return await login(email, password);
@@ -160,7 +164,7 @@ class PocketBaseService {
   /// Logout from PocketBase
   Future<void> logout() async {
     try {
-      await _pb.authLogout();
+      _pb.authStore.clear();
       print('✅ PocketBase logout successful');
     } catch (e) {
       print('❌ PocketBase logout error: $e');
@@ -211,24 +215,74 @@ class PocketBaseService {
         await initialize();
       }
 
+      print('☁️ Fetching conversations for user: $userId');
+      print('🔐 Current auth user: ${currentUserId}');
+      print('🔐 Auth valid: ${isAuthenticated}');
+
+      // Use the authenticated user's ID if available, otherwise use provided userId
+      final targetUserId = currentUserId ?? userId;
+      print('🎯 Target user ID: $targetUserId');
+
       final records = await _pb.collection('conversations').getList(
-        filter: 'user_id = "$userId"',
+        page: 1,
+        perPage: 50,
+        filter: 'user_id = "$targetUserId" && is_archived != true',
         sort: '-updated',
       );
 
-      return records.map((record) => ConversationModel(
-        id: record.id,
-        userId: record.data['user_id'],
-        chatbotId: record.data['chatbot_id'],
-        title: record.data['title'],
-        createdAt: record.created,
-        updatedAt: record.updated,
-        isArchived: record.data['is_archived'] ?? false,
-        messageCount: 0, // Will be calculated separately
-      )).toList();
+      print('☁️ PocketBase returned ${records.length} conversations');
+
+      final conversations = <ConversationModel>[];
+
+      for (final record in records) {
+        try {
+          print('☁️ Processing conversation: ${record.id}');
+          print('   - Title: ${record.data['title']}');
+          print('   - User ID: ${record.data['user_id']}');
+          print('   - Chatbot ID: ${record.data['chatbot_id']}');
+          print('   - Created: ${record.created}');
+          print('   - Updated: ${record.updated}');
+
+          // Get message count for this conversation
+          final messageCount = await _getMessageCount(record.id);
+          print('   - Message count: $messageCount');
+
+          conversations.add(ConversationModel(
+            id: record.id,
+            userId: record.data['user_id'] ?? '',
+            chatbotId: record.data['chatbot_id'] ?? '',
+            title: record.data['title'] ?? 'Untitled',
+            createdAt: record.created,
+            updatedAt: record.updated,
+            isArchived: record.data['is_archived'] ?? false,
+            messageCount: messageCount,
+          ));
+        } catch (e) {
+          print('❌ Error processing conversation ${record.id}: $e');
+        }
+      }
+
+      print('✅ Successfully processed ${conversations.length} conversations');
+      return conversations;
     } catch (e) {
-      print('❌ Error getting conversations: $e');
+      print('❌ Error getting conversations from PocketBase: $e');
+      print('   Stack trace: ${StackTrace.current}');
       return [];
+    }
+  }
+
+  /// Get message count for a conversation
+  Future<int> _getMessageCount(String conversationId) async {
+    try {
+      final records = await _pb.collection('messages').getList(
+        page: 1,
+        perPage: 1,
+        filter: 'conversation_id = "$conversationId"',
+      );
+      return records.length;
+    } catch (e) {
+      print('❌ Error getting message count for $conversationId: $e');
+      return 0;
     }
   }
 
@@ -239,14 +293,19 @@ class PocketBaseService {
         await initialize();
       }
 
+      // Use the authenticated user's ID if available
+      final targetUserId = currentUserId ?? userId;
+      print('☁️ Creating conversation for user: $targetUserId');
+
       final data = {
-        'user_id': userId,
+        'user_id': targetUserId,
         'chatbot_id': chatbotId,
         'title': title,
         'is_archived': false,
       };
 
       final record = await _pb.collection('conversations').create(data);
+      print('✅ Created conversation: ${record.id}');
       return record.id;
     } catch (e) {
       print('❌ Error creating conversation: $e');
@@ -261,18 +320,35 @@ class PocketBaseService {
         await initialize();
       }
 
+      print('☁️ Fetching messages for conversation: $conversationId');
+
       final records = await _pb.collection('messages').getList(
+        page: 1,
+        perPage: 100,
         filter: 'conversation_id = "$conversationId"',
         sort: 'created',
       );
 
-      return records.map((record) => MessageModel(
-        id: record.id,
-        text: record.data['content'],
-        isUser: record.data['is_user'],
-        timestamp: record.created,
-        tokenCount: record.data['token_count'],
-      )).toList();
+      print('☁️ Found ${records.length} messages');
+
+      final messages = <MessageModel>[];
+
+      for (final record in records) {
+        try {
+          messages.add(MessageModel(
+            id: record.id,
+            text: record.data['content'] ?? '',
+            isUser: record.data['is_user'] ?? false,
+            timestamp: record.created,
+            tokenCount: record.data['token_count'] ?? 0,
+          ));
+        } catch (e) {
+          print('❌ Error processing message ${record.id}: $e');
+        }
+      }
+
+      print('✅ Successfully processed ${messages.length} messages');
+      return messages;
     } catch (e) {
       print('❌ Error getting messages: $e');
       return [];
@@ -286,6 +362,8 @@ class PocketBaseService {
         await initialize();
       }
 
+      print('☁️ Creating message in conversation: $conversationId');
+
       final data = {
         'conversation_id': conversationId,
         'content': message.text,
@@ -293,7 +371,8 @@ class PocketBaseService {
         'token_count': message.text.split(' ').length,
       };
 
-      await _pb.collection('messages').create(data);
+      final record = await _pb.collection('messages').create(data);
+      print('✅ Created message: ${record.id}');
     } catch (e) {
       print('❌ Error creating message: $e');
       rethrow;
@@ -308,6 +387,7 @@ class PocketBaseService {
       }
 
       await _pb.collection('conversations').delete(conversationId);
+      print('✅ Deleted conversation: $conversationId');
     } catch (e) {
       print('❌ Error deleting conversation: $e');
       rethrow;
@@ -324,6 +404,7 @@ class PocketBaseService {
       await _pb.collection('conversations').update(conversationId, {
         'title': title,
       });
+      print('✅ Updated conversation title: $conversationId');
     } catch (e) {
       print('❌ Error updating conversation title: $e');
       rethrow;
@@ -340,6 +421,7 @@ class PocketBaseService {
       await _pb.collection('conversations').update(conversationId, {
         'is_archived': true,
       });
+      print('✅ Archived conversation: $conversationId');
     } catch (e) {
       print('❌ Error archiving conversation: $e');
       rethrow;
@@ -378,8 +460,9 @@ class PocketBaseService {
       }
 
       final records = await _pb.collection('users').getList(
-        filter: 'email = "$email"',
+        page: 1,
         perPage: 1,
+        filter: 'email = "$email"',
       );
 
       return records.isNotEmpty;
