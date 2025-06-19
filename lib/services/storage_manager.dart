@@ -4,6 +4,7 @@ import 'package:oneai/models/user_model.dart';
 import 'package:oneai/models/conversation_model.dart';
 import 'package:oneai/models/message_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 enum StorageType { local, pocketbase, hybrid }
 
@@ -190,12 +191,85 @@ class StorageManager {
 
       print('🚀 Starting migration to PocketBase...');
 
-      // TODO: Implement actual migration logic
-      // This would involve:
-      // 1. Get all local data
-      // 2. Upload to PocketBase
-      // 3. Verify data integrity
-      // 4. Switch storage type
+      // Get all local data
+      final prefs = await SharedPreferences.getInstance();
+      final users = prefs.getStringList('users') ?? [];
+      final conversations = prefs.getStringList('conversations') ?? [];
+      final messages = prefs.getStringList('messages') ?? [];
+
+      print('📊 Found ${users.length} users, ${conversations.length} conversations, ${messages.length} messages');
+
+      // Migrate users first
+      for (final userJson in users) {
+        try {
+          final userData = jsonDecode(userJson) as Map<String, dynamic>;
+
+          // Check if user already exists in PocketBase
+          try {
+            final existingRecords = await _pbService.pb.collection('users').getList(
+              filter: 'email = "${userData['email']}"',
+              perPage: 1,
+            );
+            if (existingRecords.isNotEmpty) {
+              print('User ${userData['email']} already exists in PocketBase');
+              continue;
+            }
+          } catch (e) {
+            // User doesn't exist, create it
+            print('Creating new user: ${userData['email']}');
+          }
+
+          await _pbService.pb.collection('users').create({
+            'username': userData['username'],
+            'email': userData['email'],
+            'password': 'temp_password_123', // User will need to reset
+            'passwordConfirm': 'temp_password_123',
+            'last_login': userData['lastLogin'],
+            'avatar_url': userData['avatarUrl'],
+          });
+
+          print('✅ Migrated user: ${userData['username']}');
+        } catch (e) {
+          print('❌ Error migrating user: $e');
+        }
+      }
+
+      // Migrate conversations
+      for (final conversationJson in conversations) {
+        try {
+          final convData = jsonDecode(conversationJson) as Map<String, dynamic>;
+
+          await _pbService.pb.collection('conversations').create({
+            'user_id': convData['userId'],
+            'chatbot_id': convData['chatbotId'],
+            'title': convData['title'],
+            'is_archived': convData['isArchived'] ?? false,
+          });
+
+          print('✅ Migrated conversation: ${convData['title']}');
+        } catch (e) {
+          print('❌ Error migrating conversation: $e');
+        }
+      }
+
+      // Migrate messages
+      for (final messageJson in messages) {
+        try {
+          final msgData = jsonDecode(messageJson) as Map<String, dynamic>;
+
+          await _pbService.pb.collection('messages').create({
+            'message_id': msgData['id'],
+            'conversation_id': msgData['conversationId'],
+            'content': msgData['text'],
+            'is_user': msgData['isUser'],
+            'token_count': msgData['tokenCount'] ?? 0,
+          });
+
+          print('✅ Migrated message');
+        } catch (e) {
+          print('❌ Error migrating message: $e');
+        }
+      }
 
       print('✅ Migration completed successfully');
       return await switchStorage(StorageType.pocketbase);

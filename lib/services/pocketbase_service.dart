@@ -1,4 +1,7 @@
 import 'package:oneai/services/pocketbase_client.dart';
+import 'package:oneai/models/user_model.dart';
+import 'package:oneai/models/conversation_model.dart';
+import 'package:oneai/models/message_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PocketBaseService {
@@ -105,7 +108,7 @@ class PocketBaseService {
   }
 
   /// Login with email and password
-  Future<PocketBaseRecord> login(String email, String password) async {
+  Future<UserModel> login(String email, String password) async {
     try {
       if (!_initialized) {
         await initialize();
@@ -113,7 +116,14 @@ class PocketBaseService {
 
       final user = await _pb.authWithPassword('users', email, password);
       print('✅ PocketBase login successful: ${user.data['username']}');
-      return user;
+
+      return UserModel(
+        id: user.id,
+        username: user.data['username'] ?? '',
+        email: user.data['email'] ?? '',
+        lastLogin: DateTime.now(),
+        avatarUrl: user.data['avatar_url'],
+      );
     } catch (e) {
       print('❌ PocketBase login failed: $e');
       rethrow;
@@ -121,7 +131,7 @@ class PocketBaseService {
   }
 
   /// Register new user
-  Future<PocketBaseRecord> register(String username, String email, String password) async {
+  Future<UserModel> register(String username, String email, String password) async {
     try {
       if (!_initialized) {
         await initialize();
@@ -133,15 +143,14 @@ class PocketBaseService {
         'email': email,
         'password': password,
         'passwordConfirm': password,
+        'is_active': true,
       };
 
       final user = await _pb.collection('users').create(userData);
       print('✅ PocketBase registration successful: ${user.data['username']}');
 
       // Auto login after registration
-      await login(email, password);
-
-      return user;
+      return await login(email, password);
     } catch (e) {
       print('❌ PocketBase registration failed: $e');
       rethrow;
@@ -196,16 +205,27 @@ class PocketBaseService {
   }
 
   /// Get user conversations
-  Future<List<PocketBaseRecord>> getUserConversations(String userId) async {
+  Future<List<ConversationModel>> getUserConversations(String userId) async {
     try {
       if (!_initialized) {
         await initialize();
       }
 
-      return await _pb.collection('conversations').getList(
+      final records = await _pb.collection('conversations').getList(
         filter: 'user_id = "$userId"',
         sort: '-updated',
       );
+
+      return records.map((record) => ConversationModel(
+        id: record.id,
+        userId: record.data['user_id'],
+        chatbotId: record.data['chatbot_id'],
+        title: record.data['title'],
+        createdAt: record.created,
+        updatedAt: record.updated,
+        isArchived: record.data['is_archived'] ?? false,
+        messageCount: 0, // Will be calculated separately
+      )).toList();
     } catch (e) {
       print('❌ Error getting conversations: $e');
       return [];
@@ -213,7 +233,7 @@ class PocketBaseService {
   }
 
   /// Create conversation
-  Future<PocketBaseRecord> createConversation(String userId, String chatbotId, String title) async {
+  Future<String> createConversation(String userId, String chatbotId, String title) async {
     try {
       if (!_initialized) {
         await initialize();
@@ -226,7 +246,8 @@ class PocketBaseService {
         'is_archived': false,
       };
 
-      return await _pb.collection('conversations').create(data);
+      final record = await _pb.collection('conversations').create(data);
+      return record.id;
     } catch (e) {
       print('❌ Error creating conversation: $e');
       rethrow;
@@ -234,16 +255,24 @@ class PocketBaseService {
   }
 
   /// Get conversation messages
-  Future<List<PocketBaseRecord>> getConversationMessages(String conversationId) async {
+  Future<List<MessageModel>> getConversationMessages(String conversationId) async {
     try {
       if (!_initialized) {
         await initialize();
       }
 
-      return await _pb.collection('messages').getList(
+      final records = await _pb.collection('messages').getList(
         filter: 'conversation_id = "$conversationId"',
         sort: 'created',
       );
+
+      return records.map((record) => MessageModel(
+        id: record.id,
+        text: record.data['content'],
+        isUser: record.data['is_user'],
+        timestamp: record.created,
+        tokenCount: record.data['token_count'],
+      )).toList();
     } catch (e) {
       print('❌ Error getting messages: $e');
       return [];
@@ -251,7 +280,7 @@ class PocketBaseService {
   }
 
   /// Create message
-  Future<PocketBaseRecord> createMessage(String conversationId, String content, bool isUser) async {
+  Future<void> createMessage(String conversationId, MessageModel message) async {
     try {
       if (!_initialized) {
         await initialize();
@@ -259,15 +288,104 @@ class PocketBaseService {
 
       final data = {
         'conversation_id': conversationId,
-        'content': content,
-        'is_user': isUser,
-        'token_count': content.split(' ').length,
+        'content': message.text,
+        'is_user': message.isUser,
+        'token_count': message.text.split(' ').length,
       };
 
-      return await _pb.collection('messages').create(data);
+      await _pb.collection('messages').create(data);
     } catch (e) {
       print('❌ Error creating message: $e');
       rethrow;
+    }
+  }
+
+  /// Delete conversation
+  Future<void> deleteConversation(String conversationId) async {
+    try {
+      if (!_initialized) {
+        await initialize();
+      }
+
+      await _pb.collection('conversations').delete(conversationId);
+    } catch (e) {
+      print('❌ Error deleting conversation: $e');
+      rethrow;
+    }
+  }
+
+  /// Update conversation title
+  Future<void> updateConversationTitle(String conversationId, String title) async {
+    try {
+      if (!_initialized) {
+        await initialize();
+      }
+
+      await _pb.collection('conversations').update(conversationId, {
+        'title': title,
+      });
+    } catch (e) {
+      print('❌ Error updating conversation title: $e');
+      rethrow;
+    }
+  }
+
+  /// Archive conversation
+  Future<void> archiveConversation(String conversationId) async {
+    try {
+      if (!_initialized) {
+        await initialize();
+      }
+
+      await _pb.collection('conversations').update(conversationId, {
+        'is_archived': true,
+      });
+    } catch (e) {
+      print('❌ Error archiving conversation: $e');
+      rethrow;
+    }
+  }
+
+  /// Get user by ID
+  Future<UserModel?> getUserById(String userId) async {
+    try {
+      if (!_initialized) {
+        await initialize();
+      }
+
+      final record = await _pb.collection('users').getOne(userId);
+
+      return UserModel(
+        id: record.id,
+        username: record.data['username'] ?? '',
+        email: record.data['email'] ?? '',
+        lastLogin: record.data['last_login'] != null
+            ? DateTime.parse(record.data['last_login'])
+            : null,
+        avatarUrl: record.data['avatar_url'],
+      );
+    } catch (e) {
+      print('❌ Error getting user by ID: $e');
+      return null;
+    }
+  }
+
+  /// Check if email exists
+  Future<bool> emailExists(String email) async {
+    try {
+      if (!_initialized) {
+        await initialize();
+      }
+
+      final records = await _pb.collection('users').getList(
+        filter: 'email = "$email"',
+        perPage: 1,
+      );
+
+      return records.isNotEmpty;
+    } catch (e) {
+      print('❌ Error checking email: $e');
+      return false;
     }
   }
 }
