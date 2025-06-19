@@ -1,0 +1,61 @@
+# Buat file .gitignore
+@"
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/ios/Runner/GoogleService-Info.plist
+**/android/app/google-services.json
+**/android/local.properties
+**/android/keystore.properties
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.staging
+
+# API Keys and Secrets
+*.key
+secrets.json
+api_keys.json
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/
+*.lcov
+"@ | Out-File -FilePath ".gitignore" -Encoding UTF8

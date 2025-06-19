@@ -1,0 +1,71 @@
+{
+"id": "conversations",
+"name": "conversations",
+"type": "base",
+"system": false,
+"schema": [
+{
+"id": "user_id",
+"name": "user_id",
+"type": "relation",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"collectionId": "users",
+"cascadeDelete": true,
+"minSelect": null,
+"maxSelect": 1,
+"displayFields": ["username", "email"]
+}
+},
+{
+"id": "chatbot_id",
+"name": "chatbot_id",
+"type": "text",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"min": 1,
+"max": 100,
+"pattern": ""
+}
+},
+{
+"id": "title",
+"name": "title",
+"type": "text",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"min": 1,
+"max": 255,
+"pattern": ""
+}
+},
+{
+"id": "is_archived",
+"name": "is_archived",
+"type": "bool",
+"system": false,
+"required": false,
+"unique": false,
+"options": {}
+}
+],
+"indexes": [
+"CREATE INDEX idx_conversations_user_id ON conversations (user_id)",
+"CREATE INDEX idx_conversations_chatbot_id ON conversations (chatbot_id)",
+"CREATE INDEX idx_conversations_is_archived ON conversations (is_archived)",
+"CREATE INDEX idx_conversations_created ON conversations (created)",
+"CREATE INDEX idx_conversations_updated ON conversations (updated)"
+],
+"listRule": "user_id = @request.auth.id",
+"viewRule": "user_id = @request.auth.id",
+"createRule": "@request.auth.id != \"\"",
+"updateRule": "user_id = @request.auth.id",
+"deleteRule": "user_id = @request.auth.id",
+"options": {}
+}

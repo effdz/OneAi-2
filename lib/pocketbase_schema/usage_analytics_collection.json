@@ -1,0 +1,84 @@
+{
+"id": "usage_analytics",
+"name": "usage_analytics",
+"type": "base",
+"system": false,
+"schema": [
+{
+"id": "user_id",
+"name": "user_id",
+"type": "relation",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"collectionId": "users",
+"cascadeDelete": true,
+"minSelect": null,
+"maxSelect": 1,
+"displayFields": ["username", "email"]
+}
+},
+{
+"id": "chatbot_id",
+"name": "chatbot_id",
+"type": "text",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"min": 1,
+"max": 100,
+"pattern": ""
+}
+},
+{
+"id": "message_count",
+"name": "message_count",
+"type": "number",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"min": 0,
+"max": null
+}
+},
+{
+"id": "token_usage",
+"name": "token_usage",
+"type": "number",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"min": 0,
+"max": null
+}
+},
+{
+"id": "date",
+"name": "date",
+"type": "date",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"min": "",
+"max": ""
+}
+}
+],
+"indexes": [
+"CREATE INDEX idx_usage_user_id ON usage_analytics (user_id)",
+"CREATE INDEX idx_usage_chatbot_id ON usage_analytics (chatbot_id)",
+"CREATE INDEX idx_usage_date ON usage_analytics (date)",
+"CREATE INDEX idx_usage_user_date ON usage_analytics (user_id, date)"
+],
+"listRule": "user_id = @request.auth.id",
+"viewRule": "user_id = @request.auth.id",
+"createRule": "user_id = @request.auth.id",
+"updateRule": "user_id = @request.auth.id",
+"deleteRule": "user_id = @request.auth.id",
+"options": {}
+}

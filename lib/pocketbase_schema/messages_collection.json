@@ -1,0 +1,82 @@
+{
+"id": "messages",
+"name": "messages",
+"type": "base",
+"system": false,
+"schema": [
+{
+"id": "conversation_id",
+"name": "conversation_id",
+"type": "relation",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"collectionId": "conversations",
+"cascadeDelete": true,
+"minSelect": null,
+"maxSelect": 1,
+"displayFields": ["title"]
+}
+},
+{
+"id": "message_id",
+"name": "message_id",
+"type": "text",
+"system": false,
+"required": false,
+"unique": false,
+"options": {
+"min": 0,
+"max": 100,
+"pattern": ""
+}
+},
+{
+"id": "content",
+"name": "content",
+"type": "text",
+"system": false,
+"required": true,
+"unique": false,
+"options": {
+"min": 1,
+"max": 10000,
+"pattern": ""
+}
+},
+{
+"id": "is_user",
+"name": "is_user",
+"type": "bool",
+"system": false,
+"required": true,
+"unique": false,
+"options": {}
+},
+{
+"id": "token_count",
+"name": "token_count",
+"type": "number",
+"system": false,
+"required": false,
+"unique": false,
+"options": {
+"min": 0,
+"max": null
+}
+}
+],
+"indexes": [
+"CREATE INDEX idx_messages_conversation_id ON messages (conversation_id)",
+"CREATE INDEX idx_messages_is_user ON messages (is_user)",
+"CREATE INDEX idx_messages_created ON messages (created)",
+"CREATE INDEX idx_messages_content ON messages (content)"
+],
+"listRule": "conversation_id.user_id = @request.auth.id",
+"viewRule": "conversation_id.user_id = @request.auth.id",
+"createRule": "conversation_id.user_id = @request.auth.id",
+"updateRule": "conversation_id.user_id = @request.auth.id",
+"deleteRule": "conversation_id.user_id = @request.auth.id",
+"options": {}
+}
